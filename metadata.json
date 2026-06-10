@@ -1,0 +1,6 @@
+{
+  "name": "Aura Fashion & Lifestyle Store",
+  "description": "A premium, glassmorphic fashion and lifestyle accessories e-commerce store featuring a complete shopping loop and interactive admin control center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
