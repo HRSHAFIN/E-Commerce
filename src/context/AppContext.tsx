@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Product, CartItem, Order, User, StoreFilters, Address, Color } from '../types';
 import { api, getToken, setToken, ApiError } from '../lib/api';
 
@@ -73,13 +73,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  const cartKeyRef = useRef('aura_cart_guest');
+  const wishlistKeyRef = useRef('aura_wishlist_guest');
+
   const [cart, setCart] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('aura_cart');
+    const saved = localStorage.getItem(cartKeyRef.current);
     return saved ? JSON.parse(saved) : [];
   });
 
   const [wishlist, setWishlist] = useState<string[]>(() => {
-    const saved = localStorage.getItem('aura_wishlist');
+    const saved = localStorage.getItem(wishlistKeyRef.current);
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -130,13 +133,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .finally(() => setAuthLoading(false));
   }, []);
 
+  // Switch to the cart/wishlist belonging to the current user (or guest) whenever the session changes
+  useEffect(() => {
+    const newCartKey = currentUser ? `aura_cart_${currentUser.id}` : 'aura_cart_guest';
+    const newWishlistKey = currentUser ? `aura_wishlist_${currentUser.id}` : 'aura_wishlist_guest';
+
+    if (newCartKey !== cartKeyRef.current) {
+      cartKeyRef.current = newCartKey;
+      const saved = localStorage.getItem(newCartKey);
+      setCart(saved ? JSON.parse(saved) : []);
+    }
+
+    if (newWishlistKey !== wishlistKeyRef.current) {
+      wishlistKeyRef.current = newWishlistKey;
+      const saved = localStorage.getItem(newWishlistKey);
+      setWishlist(saved ? JSON.parse(saved) : []);
+    }
+  }, [currentUser]);
+
   // Sync cart/wishlist to local storage when changed
   useEffect(() => {
-    localStorage.setItem('aura_cart', JSON.stringify(cart));
+    localStorage.setItem(cartKeyRef.current, JSON.stringify(cart));
   }, [cart]);
 
   useEffect(() => {
-    localStorage.setItem('aura_wishlist', JSON.stringify(wishlist));
+    localStorage.setItem(wishlistKeyRef.current, JSON.stringify(wishlist));
   }, [wishlist]);
 
   // Sync Search Query with Filters

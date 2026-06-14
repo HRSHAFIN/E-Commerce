@@ -4,6 +4,15 @@ import { requireAuth, requireRole } from '../middleware/auth';
 
 const router = Router();
 
+// Generate a unique order ID in the ORD-XXXXX format used by the seed data
+async function generateOrderId(): Promise<string> {
+  while (true) {
+    const candidate = `ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    const existing = await prisma.order.findUnique({ where: { id: candidate } });
+    if (!existing) return candidate;
+  }
+}
+
 // Admin & Moderator: list all orders
 router.get('/', requireAuth, requireRole('ADMIN', 'MODERATOR'), async (req, res) => {
   const orders = await prisma.order.findMany({
@@ -64,6 +73,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   const order = await prisma.order.create({
     data: {
+      id: await generateOrderId(),
       userId: req.user!.userId,
       subtotal,
       discount,
