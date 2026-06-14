@@ -69,7 +69,7 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
-  role: 'admin' | 'customer';
+  role: 'admin' | 'moderator' | 'customer';
   isActive: boolean;
   joinedDate: string;
 }

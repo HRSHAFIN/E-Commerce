@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MODERATOR
+  CUSTOMER
+}
+
+enum OrderStatus {
+  Pending
+  Shipped
+  Delivered
+  Cancelled
+}
+
+enum PaymentStatus {
+  Paid
+  Pending
+}
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  password   String
+  fullName   String
+  role       Role     @default(CUSTOMER)
+  isActive   Boolean  @default(true)
+  joinedDate DateTime @default(now())
+
+  orders  Order[]
+  reviews Review[]
+
+  @@map("users")
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  title           String
+  description     String   @db.Text
+  price           Float
+  originalPrice   Float
+  discountPercent Int      @default(0)
+  category        String
+  brand           String
+  rating          Float    @default(0)
+  reviewCount     Int      @default(0)
+  images          Json
+  sizes           Json
+  colors          Json
+  stock           Int      @default(0)
+  isTrending      Boolean  @default(false)
+  isDealOfDay     Boolean  @default(false)
+  recentlyViewed  Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  reviews    Review[]
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  author    String
+  rating    Float
+  date      DateTime @default(now())
+  comment   String   @db.Text
+
+  @@map("reviews")
+}
+
+model Order {
+  id            String        @id @default(cuid())
+  userId        String?
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  date          DateTime      @default(now())
+  subtotal      Float
+  discount      Float         @default(0)
+  tax           Float         @default(0)
+  deliveryFee   Float         @default(0)
+  total         Float
+  status        OrderStatus   @default(Pending)
+  paymentMethod String
+  paymentStatus PaymentStatus @default(Pending)
+  customerEmail String
+
+  fullName   String
+  phone      String
+  addressLine String
+  city       String
+  state      String
+  zipCode    String
+  country    String
+
+  items OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String  @id @default(cuid())
+  orderId       String
+  order         Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity      Int
+  selectedSize  String
+  selectedColorName String
+  selectedColorHex  String
+  priceAtPurchase Float
+
+  @@map("order_items")
+}

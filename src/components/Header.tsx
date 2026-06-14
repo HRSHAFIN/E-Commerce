@@ -187,7 +187,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart, onOpenWishlist }) =>
               </button>
 
               {/* Show dedicated Admin settings toggle if current user is an admin */}
-              {currentUser && currentUser.role === 'admin' ? (
+              {currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') ? (
                 <button
                   onClick={() => navigateTo('admin')}
                   className={`p-2 rounded-full transition-all relative ${currentView === 'admin' ? 'bg-orange-500/15 text-orange-800' : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/50'}`}

@@ -12,13 +12,23 @@ export const ProfileView: React.FC = () => {
   } = useApp();
 
   const [testEmail, setTestEmail] = useState('');
+  const [testPassword, setTestPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
 
-  const handleQuickLogin = (e: React.FormEvent) => {
+  const handleQuickLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (testEmail.trim()) {
-      loginAsUser(testEmail.trim());
-      setTestEmail('');
+    if (!testEmail.trim() || !testPassword) return;
+    setLoginSubmitting(true);
+    const error = await loginAsUser(testEmail.trim(), testPassword);
+    setLoginSubmitting(false);
+    if (error) {
+      setLoginError(error);
+      return;
     }
+    setLoginError('');
+    setTestEmail('');
+    setTestPassword('');
   };
 
   // Filter orders matching currentUser's email
@@ -51,7 +61,8 @@ export const ProfileView: React.FC = () => {
                 {/* Active Role indicator */}
                 <div className="flex items-center gap-1.5 mt-2">
                   <span className={`text-[10px] uppercase font-mono px-2.5 py-0.5 rounded font-bold ${
-                    currentUser.role === 'admin' ? 'bg-orange-500/10 text-orange-850' : 'bg-neutral-100 text-neutral-600'
+                    currentUser.role === 'admin' ? 'bg-orange-500/10 text-orange-850' :
+                    currentUser.role === 'moderator' ? 'bg-blue-500/10 text-blue-800' : 'bg-neutral-100 text-neutral-600'
                   }`}>
                     {currentUser.role} Directory
                   </span>
@@ -92,7 +103,7 @@ export const ProfileView: React.FC = () => {
               </div>
 
               <div className="pt-2 border-t border-neutral-100 space-y-2">
-                {currentUser.role === 'admin' && (
+                {(currentUser.role === 'admin' || currentUser.role === 'moderator') && (
                   <button
                     onClick={() => navigateTo('admin')}
                     className="w-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase py-2.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5"
@@ -121,25 +132,37 @@ export const ProfileView: React.FC = () => {
 
           {/* QUICK TESTING ACCESS IDENTITY SWITCH FIELD */}
           <div className="pt-6 border-t border-neutral-100 space-y-4 text-xs">
-            <h4 className="font-semibold text-neutral-900">Switch Account / Test logins:</h4>
-            <form onSubmit={handleQuickLogin} className="flex gap-2.5">
+            <h4 className="font-semibold text-neutral-900">{currentUser ? 'Switch Account:' : 'Sign In:'}</h4>
+            <form onSubmit={handleQuickLogin} className="space-y-2.5">
               <input
                 type="email"
                 required
                 value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
+                onChange={(e) => { setTestEmail(e.target.value); setLoginError(''); }}
                 placeholder="user@example.com"
-                className="flex-1 bg-white text-xs border border-neutral-200 outline-none p-2.5 rounded-lg focus:border-amber-500 font-mono"
+                className="w-full bg-white text-xs border border-neutral-200 outline-none p-2.5 rounded-lg focus:border-amber-500 font-mono"
               />
-              <button
-                type="submit"
-                className="bg-neutral-900 hover:bg-neutral-800 text-white text-[10px] font-semibold tracking-wider uppercase px-3 py-2 rounded-lg shrink-0"
-              >
-                Log In
-              </button>
+              <div className="flex gap-2.5">
+                <input
+                  type="password"
+                  required
+                  value={testPassword}
+                  onChange={(e) => { setTestPassword(e.target.value); setLoginError(''); }}
+                  placeholder="••••••••"
+                  className="flex-1 bg-white text-xs border border-neutral-200 outline-none p-2.5 rounded-lg focus:border-amber-500 font-mono"
+                />
+                <button
+                  type="submit"
+                  disabled={loginSubmitting}
+                  className="bg-neutral-900 hover:bg-neutral-800 text-white text-[10px] font-semibold tracking-wider uppercase px-3 py-2 rounded-lg shrink-0 disabled:opacity-50"
+                >
+                  {loginSubmitting ? '...' : 'Log In'}
+                </button>
+              </div>
+              {loginError && <span className="text-[10px] text-rose-500 font-bold block">{loginError}</span>}
             </form>
             <p className="text-[10px] text-neutral-400 leading-normal font-light">
-              Tip: Enter <strong className="text-neutral-700">hasiburshafin@gmail.com</strong> to switch straight to admin privilege mode. Under normal operations, guest logins generate automatic buyer identities.
+              Tip: Sign in as <strong className="text-neutral-700">hasiburshafin@gmail.com</strong> (admin), <strong className="text-neutral-700">moderator@auraFashion.com</strong> (moderator), or <strong className="text-neutral-700">user@example.com</strong> (customer) — password for all seeded accounts is <strong className="text-neutral-700">password123</strong>.
             </p>
           </div>
         </div>

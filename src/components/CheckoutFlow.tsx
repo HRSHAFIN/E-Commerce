@@ -28,7 +28,9 @@ export const CheckoutFlow: React.FC = () => {
 
   // Step 1: Login Form
   const [emailInput, setEmailInput] = useState(currentUser?.email || '');
+  const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
 
   // Step 2: Address Form
   const [address, setAddress] = useState<Address>({
@@ -69,14 +71,25 @@ export const CheckoutFlow: React.FC = () => {
     }
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!emailInput.trim() || !emailInput.includes('@')) {
       setLoginError('Please specify a valid email address');
       return;
     }
+    if (!passwordInput) {
+      setLoginError('Please enter your password');
+      return;
+    }
     setLoginError('');
-    loginAsUser(emailInput.trim());
+    setLoginSubmitting(true);
+    const error = await loginAsUser(emailInput.trim(), passwordInput);
+    setLoginSubmitting(false);
+    if (error) {
+      setLoginError(error);
+      return;
+    }
+    setPasswordInput('');
     markStepComplete(1);
     setActiveStep(2);
   };
@@ -121,14 +134,14 @@ export const CheckoutFlow: React.FC = () => {
     return Object.keys(errorMap).length === 0;
   };
 
-  const handlePlaceOrderSubmit = (e: React.FormEvent) => {
+  const handlePlaceOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (validatePayment()) {
-      const activeMethodLabel = 
+      const activeMethodLabel =
         paymentMethod === 'card' ? 'Credit/Debit Card' :
         paymentMethod === 'upi' ? `UPI ID: ${upiId}` : 'Cash on Delivery';
-      
-      placeOrder(address, activeMethodLabel);
+
+      await placeOrder(address, activeMethodLabel);
     }
   };
 
@@ -260,7 +273,7 @@ export const CheckoutFlow: React.FC = () => {
                 ) : (
                   <form onSubmit={handleLoginSubmit} className="space-y-4">
                     <p className="text-xs text-neutral-500 max-w-md font-light">
-                      Please enter your e-mail address. We will automatically log you in if you have a pre-registered profile or generate a lightning guest profile.
+                      Please sign in with your account email and password to continue to checkout.
                     </p>
                     <div className="space-y-1.5 max-w-sm">
                       <label className="text-xs font-semibold text-neutral-600 block">Email Address</label>
@@ -272,13 +285,25 @@ export const CheckoutFlow: React.FC = () => {
                         placeholder="buyer@example.com"
                         className="w-full bg-white text-xs border border-neutral-200 outline-none p-3 rounded-lg focus:border-amber-500 text-neutral-800 shadow-sm"
                       />
-                      {loginError && <span className="text-[10px] text-rose-500 font-bold block">{loginError}</span>}
+                    </div>
+                    <div className="space-y-1.5 max-w-sm">
+                      <label className="text-xs font-semibold text-neutral-600 block">Password</label>
+                      <input
+                        type="password"
+                        required
+                        value={passwordInput}
+                        onChange={(e) => { setPasswordInput(e.target.value); setLoginError(''); }}
+                        placeholder="••••••••"
+                        className="w-full bg-white text-xs border border-neutral-200 outline-none p-3 rounded-lg focus:border-amber-500 text-neutral-800 shadow-sm"
+                      />
+                      {loginError && <span className="text-[10px] text-rose-500 font-bold block mt-1">{loginError}</span>}
                     </div>
                     <button
                       type="submit"
-                      className="bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase px-6 py-2.5 rounded-lg active:scale-95 transition-all"
+                      disabled={loginSubmitting}
+                      className="bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase px-6 py-2.5 rounded-lg active:scale-95 transition-all disabled:opacity-50"
                     >
-                      Authenticate and Continue
+                      {loginSubmitting ? 'Signing In…' : 'Authenticate and Continue'}
                     </button>
                   </form>
                 )}

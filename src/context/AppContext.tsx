@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product, CartItem, Order, User, StoreFilters, Address, Color } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_USERS, INITIAL_ORDERS } from '../data';
+import { api, getToken, setToken, ApiError } from '../lib/api';
 
 interface AppContextType {
   products: Product[];
@@ -9,6 +9,7 @@ interface AppContextType {
   cart: CartItem[];
   wishlist: string[];
   currentUser: User | null;
+  authLoading: boolean;
   filters: StoreFilters;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -16,10 +17,10 @@ interface AppContextType {
   currentView: 'home' | 'plp' | 'pdp' | 'checkout' | 'admin' | 'profile';
   selectedProductId: string | null;
   selectedOrderSuccess: Order | null;
-  
+
   // View Router
   navigateTo: (view: 'home' | 'plp' | 'pdp' | 'checkout' | 'admin' | 'profile', productId?: string | null) => void;
-  
+
   // Cart Actions
   addToCart: (product: Product, quantity: number, size: string, color: Color) => void;
   removeFromCart: (cartItemId: string) => void;
@@ -27,31 +28,31 @@ interface AppContextType {
   clearCart: () => void;
   cartTotal: number;
   cartCount: number;
-  
+
   // Wishlist Actions
   toggleWishlist: (productId: string) => void;
   isInWishlist: (productId: string) => boolean;
-  
+
   // Checkout & Ordering
-  placeOrder: (address: Address, paymentMethod: string) => Order | null;
+  placeOrder: (address: Address, paymentMethod: string) => Promise<Order | null>;
   clearOrderSuccess: () => void;
-  
+
   // Authentication Actions
-  loginAsUser: (email: string) => void;
+  loginAsUser: (email: string, password: string) => Promise<string | null>;
   logoutUser: () => void;
-  
+
   // Filter Actions
   updateFilters: (updates: Partial<StoreFilters>) => void;
   resetFilters: () => void;
-  
+
   // Admin Operations (CRUD)
-  addProduct: (product: Omit<Product, 'id'>) => void;
-  updateProduct: (product: Product) => void;
-  deleteProduct: (productId: string) => void;
-  addUser: (user: Omit<User, 'id'>) => void;
-  updateUser: (user: User) => void;
-  deleteUser: (userId: string) => void;
-  updateOrderStatus: (orderId: string, status: Order['status']) => void;
+  addProduct: (product: Omit<Product, 'id' | 'rating' | 'reviewCount'>) => Promise<void>;
+  updateProduct: (product: Product) => Promise<void>;
+  deleteProduct: (productId: string) => Promise<void>;
+  addUser: (user: Omit<User, 'id' | 'joinedDate'>, password?: string) => Promise<string | null>;
+  updateUser: (user: User) => Promise<string | null>;
+  deleteUser: (userId: string) => Promise<void>;
+  updateOrderStatus: (orderId: string, status: Order['status']) => Promise<void>;
 }
 
 const defaultFilters: StoreFilters = {
@@ -66,21 +67,11 @@ const defaultFilters: StoreFilters = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Load initial state or local storage
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem('aura_products');
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-  });
-
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('aura_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
-
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('aura_orders');
-    return saved ? JSON.parse(saved) : INITIAL_ORDERS;
-  });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem('aura_cart');
@@ -92,33 +83,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('aura_current_user');
-    // Default to the admin user: Hasibur Shafin for seamless inspection of the Admin Dashboard
-    if (saved) return JSON.parse(saved);
-    const admin = INITIAL_USERS.find(u => u.role === 'admin');
-    return admin || INITIAL_USERS[0];
-  });
-
   const [filters, setFilters] = useState<StoreFilters>(defaultFilters);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentView, setCurrentView] = useState<AppContextType['currentView']>('home');
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedOrderSuccess, setSelectedOrderSuccess] = useState<Order | null>(null);
 
-  // Sync state to local storage when changed
-  useEffect(() => {
-    localStorage.setItem('aura_products', JSON.stringify(products));
-  }, [products]);
+  // Load orders/users appropriate to the current user's role
+  const loadRoleData = async (user: User) => {
+    try {
+      if (user.role === 'admin') {
+        const [allUsers, allOrders] = await Promise.all([api.getUsers(), api.getAllOrders()]);
+        setUsers(allUsers);
+        setOrders(allOrders);
+      } else if (user.role === 'moderator') {
+        const allOrders = await api.getAllOrders();
+        setOrders(allOrders);
+      } else {
+        const myOrders = await api.getMyOrders();
+        setOrders(myOrders);
+      }
+    } catch (err) {
+      console.error('Failed to load role data', err);
+    }
+  };
 
+  // Initial bootstrap: load products and restore session from token
   useEffect(() => {
-    localStorage.setItem('aura_users', JSON.stringify(users));
-  }, [users]);
+    api.getProducts().then(setProducts).catch(err => console.error('Failed to load products', err));
 
-  useEffect(() => {
-    localStorage.setItem('aura_orders', JSON.stringify(orders));
-  }, [orders]);
+    const token = getToken();
+    if (!token) {
+      setAuthLoading(false);
+      return;
+    }
 
+    api.getMe()
+      .then(async (user) => {
+        setCurrentUser(user);
+        await loadRoleData(user);
+      })
+      .catch(() => {
+        setToken(null);
+        setCurrentUser(null);
+      })
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  // Sync cart/wishlist to local storage when changed
   useEffect(() => {
     localStorage.setItem('aura_cart', JSON.stringify(cart));
   }, [cart]);
@@ -126,14 +138,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('aura_wishlist', JSON.stringify(wishlist));
   }, [wishlist]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('aura_current_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('aura_current_user');
-    }
-  }, [currentUser]);
 
   // Sync Search Query with Filters
   useEffect(() => {
@@ -145,7 +149,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentView(view);
     if (productId) {
       setSelectedProductId(productId);
-      
+
       // Update recentlyViewed property for the selected product
       setProducts(prev => prev.map(p => {
         if (p.id === productId) {
@@ -194,9 +198,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Wishlist Functions
   const toggleWishlist = (productId: string) => {
-    setWishlist(prev => 
-      prev.includes(productId) 
-        ? prev.filter(id => id !== productId) 
+    setWishlist(prev =>
+      prev.includes(productId)
+        ? prev.filter(id => id !== productId)
         : [...prev, productId]
     );
   };
@@ -204,47 +208,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isInWishlist = (productId: string) => wishlist.includes(productId);
 
   // Ordering Flow
-  const placeOrder = (address: Address, paymentMethod: string): Order | null => {
-    if (cart.length === 0) return null;
+  const placeOrder = async (address: Address, paymentMethod: string): Promise<Order | null> => {
+    if (cart.length === 0 || !currentUser) return null;
 
     const subtotal = cartTotal;
     const discount = subtotal > 200 ? 30 : subtotal > 100 ? 15 : 0;
     const tax = Number((subtotal * 0.08).toFixed(2));
     const deliveryFee = subtotal > 150 ? 0 : 15;
-    const total = Number((subtotal - discount + tax + deliveryFee).toFixed(2));
 
-    const newOrder: Order = {
-      id: `ORD-${Math.floor(10000 + Math.random() * 90000)}`,
-      date: new Date().toISOString(),
-      items: [...cart],
-      subtotal,
-      discount,
-      tax,
-      deliveryFee,
-      total,
-      address,
-      status: 'Pending',
-      paymentMethod,
-      paymentStatus: paymentMethod === 'Cash on Delivery' ? 'Pending' : 'Paid',
-      customerEmail: currentUser?.email || 'guest@example.com'
-    };
+    try {
+      const newOrder = await api.createOrder({
+        items: cart.map(item => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          selectedSize: item.selectedSize,
+          selectedColorName: item.selectedColor.name,
+          selectedColorHex: item.selectedColor.hex,
+        })),
+        discount,
+        tax,
+        deliveryFee,
+        paymentMethod,
+        address,
+      });
 
-    // Update stock levels
-    setProducts(prevProducts => 
-      prevProducts.map(p => {
-        const cartItemsForProduct = cart.filter(item => item.product.id === p.id);
-        if (cartItemsForProduct.length > 0) {
-          const totalQtyPurchased = cartItemsForProduct.reduce((acc, item) => acc + item.quantity, 0);
-          return { ...p, stock: Math.max(0, p.stock - totalQtyPurchased) };
-        }
-        return p;
-      })
-    );
+      setOrders(prev => [newOrder, ...prev]);
+      setSelectedOrderSuccess(newOrder);
 
-    setOrders(prev => [newOrder, ...prev]);
-    setSelectedOrderSuccess(newOrder);
-    clearCart();
-    return newOrder;
+      // Refresh product stock levels from the server
+      api.getProducts().then(setProducts).catch(() => {});
+
+      clearCart();
+      return newOrder;
+    } catch (err) {
+      console.error('Failed to place order', err);
+      return null;
+    }
   };
 
   const clearOrderSuccess = () => {
@@ -252,29 +251,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Auth Operations
-  const loginAsUser = (email: string) => {
-    const existing = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      setCurrentUser(existing);
-    } else {
-      // Create lightweight guest profile
-      const [namePrefix] = email.split('@');
-      const formattedName = namePrefix.charAt(0).toUpperCase() + namePrefix.slice(1);
-      const newUser: User = {
-        id: `user-${Date.now()}`,
-        email: email,
-        fullName: formattedName,
-        role: 'customer',
-        isActive: true,
-        joinedDate: new Date().toISOString().split('T')[0]
-      };
-      setUsers(prev => [...prev, newUser]);
-      setCurrentUser(newUser);
+  const loginAsUser = async (email: string, password: string): Promise<string | null> => {
+    try {
+      const { token, user } = await api.login(email, password);
+      setToken(token);
+      setCurrentUser(user);
+      await loadRoleData(user);
+      return null;
+    } catch (err) {
+      return err instanceof ApiError ? err.message : 'Unable to sign in. Please try again.';
     }
   };
 
   const logoutUser = () => {
+    setToken(null);
     setCurrentUser(null);
+    setUsers([]);
+    setOrders([]);
     navigateTo('home');
   };
 
@@ -334,48 +327,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   // Admin CRUD Operations for full interactivity
-  const addProduct = (pData: Omit<Product, 'id'>) => {
-    const newProduct: Product = {
-      ...pData,
-      id: `prod-${Date.now()}`,
-      rating: 5.0,
-      reviewCount: 0
-    };
+  const addProduct = async (pData: Omit<Product, 'id' | 'rating' | 'reviewCount'>) => {
+    const newProduct = await api.createProduct(pData);
     setProducts(prev => [newProduct, ...prev]);
   };
 
-  const updateProduct = (updatedProd: Product) => {
-    setProducts(prev => prev.map(p => p.id === updatedProd.id ? updatedProd : p));
+  const updateProduct = async (updatedProd: Product) => {
+    const saved = await api.updateProduct(updatedProd);
+    setProducts(prev => prev.map(p => p.id === saved.id ? saved : p));
   };
 
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string) => {
+    await api.deleteProduct(id);
     setProducts(prev => prev.filter(p => p.id !== id));
   };
 
-  const addUser = (uData: Omit<User, 'id'>) => {
-    const newUser: User = {
-      ...uData,
-      id: `user-${Date.now()}`
-    };
-    setUsers(prev => [...prev, newUser]);
-  };
-
-  const updateUser = (updatedUser: User) => {
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    if (currentUser && currentUser.id === updatedUser.id) {
-      setCurrentUser(updatedUser);
+  const addUser = async (uData: Omit<User, 'id' | 'joinedDate'>, password?: string): Promise<string | null> => {
+    try {
+      const newUser = await api.createUser({ ...uData, password });
+      setUsers(prev => [newUser, ...prev]);
+      return null;
+    } catch (err) {
+      return err instanceof ApiError ? err.message : 'Unable to create member.';
     }
   };
 
-  const deleteUser = (id: string) => {
+  const updateUser = async (updatedUser: User): Promise<string | null> => {
+    try {
+      const saved = await api.updateUser(updatedUser);
+      setUsers(prev => prev.map(u => u.id === saved.id ? saved : u));
+      if (currentUser && currentUser.id === saved.id) {
+        setCurrentUser(saved);
+      }
+      return null;
+    } catch (err) {
+      return err instanceof ApiError ? err.message : 'Unable to update member.';
+    }
+  };
+
+  const deleteUser = async (id: string) => {
+    await api.deleteUser(id);
     setUsers(prev => prev.filter(u => u.id !== id));
     if (currentUser && currentUser.id === id) {
-      setCurrentUser(null);
+      logoutUser();
     }
   };
 
-  const updateOrderStatus = (id: string, status: Order['status']) => {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, status, paymentStatus: status === 'Delivered' ? 'Paid' : o.paymentStatus } : o));
+  const updateOrderStatus = async (id: string, status: Order['status']) => {
+    const saved = await api.updateOrderStatus(id, status);
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: saved.status, paymentStatus: saved.paymentStatus } : o));
   };
 
   return (
@@ -386,6 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cart,
       wishlist,
       currentUser,
+      authLoading,
       filters,
       searchQuery,
       setSearchQuery,

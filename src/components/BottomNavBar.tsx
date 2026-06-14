@@ -72,7 +72,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ onOpenCart }) => {
         </button>
 
         {/* Dedicated Admin Panel Trigger if user has admin privileges */}
-        {currentUser && currentUser.role === 'admin' ? (
+        {currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator') ? (
           <button
             onClick={() => navigateTo('admin')}
             className={`flex flex-col items-center justify-center p-2 rounded-full duration-200 active:scale-90 ${currentView === 'admin' ? 'text-[#f59e0b]' : 'text-gray-500 hover:text-white'}`}

@@ -23,8 +23,19 @@ export const AdminDashboard: React.FC = () => {
     updateOrderStatus
   } = useApp();
 
-  // Authentication barrier: checks if currentUser is an Admin
-  const isAuthorized = currentUser && currentUser.role === 'admin';
+  // Authentication barrier: Admins & Moderators may access the control center
+  const isAuthorized = currentUser && (currentUser.role === 'admin' || currentUser.role === 'moderator');
+  const isAdmin = currentUser?.role === 'admin';
+
+  const [bypassLoading, setBypassLoading] = useState(false);
+  const [bypassError, setBypassError] = useState('');
+
+  const handleBypassLogin = async () => {
+    setBypassLoading(true);
+    const error = await loginAsUser('hasiburshafin@gmail.com', 'password123');
+    setBypassLoading(false);
+    if (error) setBypassError(error);
+  };
 
   // Sub-tab tracking
   const [adminTab, setAdminTab] = useState<'analytics' | 'products' | 'orders' | 'users' | 'settings'>('analytics');
@@ -63,6 +74,10 @@ export const AdminDashboard: React.FC = () => {
     role: 'customer',
     isActive: true
   });
+  const [newUserPassword, setNewUserPassword] = useState('');
+
+  const [productFormError, setProductFormError] = useState('');
+  const [userFormError, setUserFormError] = useState('');
 
   // Site Configurations settings representational state
   const [siteSettings, setSiteSettings] = useState({
@@ -93,12 +108,14 @@ export const AdminDashboard: React.FC = () => {
             Click the button below to log in immediately as <strong className="text-neutral-850">Hasibur Shafin (hasiburshafin@gmail.com)</strong>, the prefilled administrative profiles coordinator.
           </p>
           <button
-            onClick={() => loginAsUser('hasiburshafin@gmail.com')}
-            className="w-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase py-2.5 rounded-xl duration-200 active:scale-95"
+            onClick={handleBypassLogin}
+            disabled={bypassLoading}
+            className="w-full bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase py-2.5 rounded-xl duration-200 active:scale-95 disabled:opacity-50"
             id="admin-quick-bypass-login"
           >
-            Authenticate Authorized Admin Profile
+            {bypassLoading ? 'Authenticating…' : 'Authenticate Authorized Admin Profile'}
           </button>
+          {bypassError && <p className="text-[11px] text-rose-500 font-bold">{bypassError}</p>}
         </div>
       </div>
     );
@@ -115,15 +132,21 @@ export const AdminDashboard: React.FC = () => {
 
   const lowStockProductsCount = products.filter(p => p.stock <= 5).length;
 
-  const handleProductFormSubmit = (e: React.FormEvent) => {
+  const handleProductFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingProduct) {
-      updateProduct({
-        ...editingProduct,
-        ...productForm
-      });
-    } else {
-      addProduct(productForm);
+    setProductFormError('');
+    try {
+      if (editingProduct) {
+        await updateProduct({
+          ...editingProduct,
+          ...productForm
+        });
+      } else {
+        await addProduct(productForm);
+      }
+    } catch (err) {
+      setProductFormError(err instanceof Error ? err.message : 'Unable to save product.');
+      return;
     }
     setIsProductModalOpen(false);
     setEditingProduct(null);
@@ -143,16 +166,18 @@ export const AdminDashboard: React.FC = () => {
     });
   };
 
-  const handleUserFormSubmit = (e: React.FormEvent) => {
+  const handleUserFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingUser) {
-      updateUser({
-        ...editingUser,
-        ...userForm
-      });
-    } else {
-      addUser(userForm);
+    setUserFormError('');
+    const error = editingUser
+      ? await updateUser({ ...editingUser, ...userForm })
+      : await addUser(userForm, newUserPassword || undefined);
+
+    if (error) {
+      setUserFormError(error);
+      return;
     }
+
     setIsUserModalOpen(false);
     setEditingUser(null);
     // Reset Form
@@ -162,6 +187,7 @@ export const AdminDashboard: React.FC = () => {
       role: 'customer',
       isActive: true
     });
+    setNewUserPassword('');
   };
 
   const openEditProductModal = (prod: Product) => {
@@ -217,13 +243,15 @@ export const AdminDashboard: React.FC = () => {
             <Plus size={14} />
             Product
           </button>
-          <button
-            onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}
-            className="bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase px-4 py-2.5 rounded-xl flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
-          >
-            <Plus size={14} />
-            User Member
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}
+              className="bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold tracking-wider uppercase px-4 py-2.5 rounded-xl flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
+            >
+              <Plus size={14} />
+              User Member
+            </button>
+          )}
         </div>
       </div>
 
@@ -233,8 +261,8 @@ export const AdminDashboard: React.FC = () => {
           { key: 'analytics', label: 'Overview Analytics', icon: BarChart3 },
           { key: 'products', label: 'Product Catalog', icon: Package },
           { key: 'orders', label: 'Fulfill Orders', icon: ShoppingCart },
-          { key: 'users', label: 'Member Directory', icon: Users },
-          { key: 'settings', label: 'General Configurations', icon: Settings }
+          ...(isAdmin ? [{ key: 'users', label: 'Member Directory', icon: Users }] : []),
+          ...(isAdmin ? [{ key: 'settings', label: 'General Configurations', icon: Settings }] : [])
         ].map((tab) => {
           const IconComponent = tab.icon;
           const isActive = adminTab === tab.key;
@@ -452,13 +480,15 @@ export const AdminDashboard: React.FC = () => {
                           >
                             <Edit size={13} />
                           </button>
-                          <button
-                            onClick={() => deleteProduct(p.id)}
-                            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded"
-                            title="Delete product piece"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => deleteProduct(p.id).catch(err => alert(err instanceof Error ? err.message : 'Failed to delete product'))}
+                              className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                              title="Delete product piece"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -534,7 +564,7 @@ export const AdminDashboard: React.FC = () => {
                           {/* Selector to change status */}
                           <select
                             value={o.status}
-                            onChange={(e) => updateOrderStatus(o.id, e.target.value as any)}
+                            onChange={(e) => updateOrderStatus(o.id, e.target.value as any).catch(err => alert(err instanceof Error ? err.message : 'Failed to update order'))}
                             className="bg-neutral-50 border border-neutral-200 text-[10px] rounded px-2 py-1 font-semibold cursor-pointer text-neutral-700 outline-none"
                           >
                             <option value="Pending">Pending</option>
@@ -592,7 +622,8 @@ export const AdminDashboard: React.FC = () => {
                         </td>
                         <td className="p-4">
                           <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
-                            u.role === 'admin' ? 'bg-orange-500/10 text-orange-800' : 'bg-neutral-100 text-neutral-600'
+                            u.role === 'admin' ? 'bg-orange-500/10 text-orange-800' :
+                            u.role === 'moderator' ? 'bg-blue-500/10 text-blue-800' : 'bg-neutral-100 text-neutral-600'
                           }`}>
                             {u.role.toUpperCase()}
                           </span>
@@ -610,7 +641,7 @@ export const AdminDashboard: React.FC = () => {
                             <Edit size={13} />
                           </button>
                           <button
-                            onClick={() => deleteUser(u.id)}
+                            onClick={() => deleteUser(u.id).catch(err => alert(err instanceof Error ? err.message : 'Failed to delete user'))}
                             className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded"
                             title="Purge member directory"
                           >
@@ -808,6 +839,8 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
+            {productFormError && <p className="text-[11px] text-rose-500 font-bold">{productFormError}</p>}
+
             <button
               type="submit"
               className="w-full bg-neutral-900 hover:bg-neutral-800 text-white font-semibold py-3 rounded-xl transition-all shadow-md mt-4 uppercase tracking-widest font-mono text-[10px]"
@@ -860,6 +893,20 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
+              {/* Password (new members only) */}
+              {!editingUser && (
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-neutral-600 block">Initial Password</label>
+                  <input
+                    type="text"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                    placeholder="Defaults to password123 if left blank"
+                    className="w-full bg-white border border-neutral-200 outline-none p-2.5 rounded-lg focus:border-amber-500 font-mono text-neutral-800"
+                  />
+                </div>
+              )}
+
               {/* privileges privilege */}
               <div className="space-y-1.5 font-sans">
                 <label className="font-semibold text-neutral-600 block font-sans">Corporate role</label>
@@ -869,6 +916,7 @@ export const AdminDashboard: React.FC = () => {
                   className="w-full bg-white border border-neutral-200 outline-none p-2.5 rounded-lg focus:border-amber-500 font-bold"
                 >
                   <option value="customer">Customer Access</option>
+                  <option value="moderator">Moderator Access</option>
                   <option value="admin">Platform authorized Admin</option>
                 </select>
               </div>
@@ -884,6 +932,8 @@ export const AdminDashboard: React.FC = () => {
                 <span>Set Directory Status Active</span>
               </label>
             </div>
+
+            {userFormError && <p className="text-[11px] text-rose-500 font-bold">{userFormError}</p>}
 
             <button
               type="submit"
